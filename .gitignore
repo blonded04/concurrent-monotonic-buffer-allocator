@@ -30,3 +30,11 @@
 *.exe
 *.out
 *.app
+
+# VSCode History directory
+*.history/*
+*.vscode/*
+
+# Build directories
+build*/
+cmake-*/
