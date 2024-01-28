@@ -138,12 +138,23 @@ private:
     constexpr void do_deallocate(void *p, std::size_t bytes, std::size_t alignment) const noexcept {
     }
 
+    bool do_is_equal(const concurrent_monotonic_buffer_resource& other) {
+        return this == &other;
+    }
+
     friend class concurrent_monotonic_buffer_allocator;
 
 public:
     concurrent_monotonic_buffer_resource(void *buffer, std::size_t size) noexcept
         : m_buffer{buffer}, m_size{size}, m_current_offset{0} {
     }
+
+    concurrent_monotonic_buffer_resource(const concurrent_monotonic_buffer_resource&) = delete;
+    concurrent_monotonic_buffer_resource(concurrent_monotonic_buffer_resource&&) = default;
+    concurrent_monotonic_buffer_resource& operator=(const concurrent_monotonic_buffer_resource&) = delete;
+    concurrent_monotonic_buffer_resource& operator=(concurrent_monotonic_buffer_resource&&) = default;
+
+    ~concurrent_monotonic_buffer_resource() = default;
 };
 
 }  // namespace cmba
