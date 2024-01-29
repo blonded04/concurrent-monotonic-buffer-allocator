@@ -26,5 +26,7 @@ int main() {
 }
 ```
 
+You may also want to see [other examples](https://github.com/blonded04/concurrent-monotonic-buffer-allocator/blob/master/example.cpp).
+
 ## License
 This code is licensed under The Unlicense, which means that you are free to do anything you want with this code without facing any legal consequences.
