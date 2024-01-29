@@ -41,10 +41,8 @@ int main() {
 
     try {
         std::vector<std::byte> buffer(k_elements_count * 256);  // should be enough
-        // also possible: cmba::cmb_resource
         cmba::cmb_resource resource(buffer.data(), buffer.size());
 
-        // also possible: cmba::cmb_allocator
         cmba::cmb_allocator<int> allocator_int(&resource);
 
         constexpr std::size_t thread_count = 8;
@@ -69,5 +67,24 @@ int main() {
 
         std::cout << "OK! {" << total_size.load(std::memory_order_seq_cst) << "}\n";
     } catch (std::exception &e) {
+        std::cout << "Something went wrong " << e.what() << "\n";
+    }
+
+    try {
+        std::vector<std::byte> buffer(k_elements_count * 256);  // should be enough
+        cmba::cmb_resource resource(buffer.data(), buffer.size());
+
+        cmba::cmb_allocator<bool> allocator_bool(&resource);
+
+        std::vector<bool, cmba::cmb_allocator<bool>> container_vector(allocator_bool);
+
+        for (std::size_t i = 0; i < k_elements_count; i++) {
+            container_vector.push_back(static_cast<bool>(i & 1));
+        }
+
+        std::cout << "OK! {" << std::count(container_vector.begin(), container_vector.end(), false) << ", "
+                  << std::count(container_vector.begin(), container_vector.end(), true) << "}\n";
+    } catch (std::exception &e) {
+        std::cout << "Something went wrong " << e.what() << "\n";
     }
 }
