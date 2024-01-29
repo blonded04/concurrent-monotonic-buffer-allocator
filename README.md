@@ -1,7 +1,9 @@
 # concurrent-monotonic-buffer-allocator
 Simple header-only C++20 concurrent monotonic buffer allocator that models the allocator requirements from the [[allocator.requirements]](https://eel.is/c++draft/allocator.requirements) ISO C++ section.
 
-### Usage
+Feel free to open an issue or a pull-request.
+
+## Usage
 
 Just `#include <cmba/allocator.h>` to your code:
 
@@ -24,4 +26,5 @@ int main() {
 }
 ```
 
-You may also feel free to open an issue or a pull-request.
+## License
+This code is licensed under The Unlicense, which means that you are free to do anything you want with this code without facing any legal consequences.
