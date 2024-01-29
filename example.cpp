@@ -36,7 +36,7 @@ int main() {
 
         std::cout << "OK! {" << container_vector.size() << ", " << container_list.size() << ", "
                   << container_map.size() << "}\n";
-    } catch (std::exception &e) {
+    } catch (std::exception& e) {
         std::cout << "Something went wrong " << e.what() << "\n";
     }
 
@@ -67,7 +67,7 @@ int main() {
         }
 
         std::cout << "OK! {" << total_size.load(std::memory_order_seq_cst) << "}\n";
-    } catch (std::exception &e) {
+    } catch (std::exception& e) {
         std::cout << "Something went wrong " << e.what() << "\n";
     }
 
@@ -85,7 +85,7 @@ int main() {
 
         std::cout << "OK! {" << std::count(container_vector.begin(), container_vector.end(), false) << ", "
                   << std::count(container_vector.begin(), container_vector.end(), true) << "}\n";
-    } catch (std::exception &e) {
+    } catch (std::exception& e) {
         std::cout << "Something went wrong " << e.what() << "\n";
     }
 }
