@@ -10,6 +10,7 @@ Just `#include <cmba/allocator.h>` to your code:
 ```c++
 #include <cmba/allocator.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
