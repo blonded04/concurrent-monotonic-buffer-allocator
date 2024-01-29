@@ -10,14 +10,20 @@ Just `#include <cmba/allocator.h>` to your code:
 ```c++
 #include <cmba/allocator.h>
 
+#include <cstdint>
+#include <vector>
+
+constexpr std::size_t k_elements_count = 100000;
+
 int main() {
     std::vector<std::byte> buffer(k_elements_count * 256);
     // also possible: cmba::cmb_resource
     cmba::concurrent_monotonic_buffer_resource resource(buffer.data(), buffer.size());
 
-    // also possible: cmba::cmb_allocator
+    // also possible: cmba::cmb_allocator<int>
     cmba::concurrent_monotonic_buffer_allocator<int> allocator_int(&resource);
 
+    std::vector<int, cmba::cmb_allocator<int>> container_vector(allocator_int);
     container_vector.reserve(k_elements_count);
     for (int i = 0; i < k_elements_count; i++) {
         container_vector.push_back(i + 10);
