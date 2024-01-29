@@ -9,6 +9,7 @@
 #define CMBA_BLONDED04_
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <new>
 #include <stdexcept>
@@ -84,6 +85,7 @@ constexpr std::size_t k_cacheline_size =
 
 }  // namespace detail
 
+// NOLINTNEXTLINE(google-build-using-namespace)
 using namespace detail;
 
 struct monotonic_buffer_bad_alloc_exception : public std::bad_alloc {
@@ -97,20 +99,20 @@ public:
         : m_failed_alloc_size{failed_alloc_size}, m_failed_alloc_alignment{failed_alloc_alignment} {
     }
 
-    const char *what() const noexcept override {
+    [[nodiscard]] const char *what() const noexcept override {
         return "Concurrent monotonic buffer allocation failed, out of memory. "
                "To get size and alignment of failed allocation call "
                "get_context() method";
     }
 
-    std::pair<std::size_t, std::size_t> get_context() const noexcept {
+    [[nodiscard]] std::pair<std::size_t, std::size_t> get_context() const noexcept {
         return {m_failed_alloc_size, m_failed_alloc_alignment};
     }
 };
 
 class alignas(k_cacheline_size) concurrent_monotonic_buffer_resource {
 private:
-    void *m_buffer;
+    std::byte *m_buffer;
     std::size_t m_size;
     alignas(k_cacheline_size) std::atomic<std::size_t> m_current_offset;
 
@@ -132,30 +134,77 @@ private:
             }
         }
 
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
         return m_buffer + ceil_size_as(current_offset_snapshot, alignment);
     }
 
     constexpr void do_deallocate(void *p, std::size_t bytes, std::size_t alignment) const noexcept {
     }
 
-    bool do_is_equal(const concurrent_monotonic_buffer_resource& other) {
+    bool do_is_equal(const concurrent_monotonic_buffer_resource &other) {
         return this == &other;
     }
 
+    template <typename T>
     friend class concurrent_monotonic_buffer_allocator;
 
 public:
-    concurrent_monotonic_buffer_resource(void *buffer, std::size_t size) noexcept
+    explicit concurrent_monotonic_buffer_resource(std::byte *buffer, std::size_t size) noexcept
         : m_buffer{buffer}, m_size{size}, m_current_offset{0} {
     }
 
-    concurrent_monotonic_buffer_resource(const concurrent_monotonic_buffer_resource&) = delete;
-    concurrent_monotonic_buffer_resource(concurrent_monotonic_buffer_resource&&) = default;
-    concurrent_monotonic_buffer_resource& operator=(const concurrent_monotonic_buffer_resource&) = delete;
-    concurrent_monotonic_buffer_resource& operator=(concurrent_monotonic_buffer_resource&&) = default;
+    concurrent_monotonic_buffer_resource(const concurrent_monotonic_buffer_resource &) = delete;
+    // already deleted implicitly because of atomic member
+    concurrent_monotonic_buffer_resource(concurrent_monotonic_buffer_resource &&) = delete;
+    concurrent_monotonic_buffer_resource &operator=(const concurrent_monotonic_buffer_resource &) = delete;
+    // already deleted implicitly because of atomic member
+    concurrent_monotonic_buffer_resource &operator=(concurrent_monotonic_buffer_resource &&) = delete;
 
     ~concurrent_monotonic_buffer_resource() = default;
 };
+
+template <typename T>
+class concurrent_monotonic_buffer_allocator {
+private:
+    concurrent_monotonic_buffer_resource *m_resource;
+
+public:
+    using value_type = T;
+
+    explicit concurrent_monotonic_buffer_allocator(concurrent_monotonic_buffer_resource *resource) noexcept
+        : m_resource{resource} {
+    }
+
+    template <typename U>
+    concurrent_monotonic_buffer_allocator(const concurrent_monotonic_buffer_allocator<U> &other) noexcept {
+        m_resource = other.m_resource;
+    }
+
+    constexpr T *allocate(std::size_t count) {
+        return m_resource->do_allocate(sizeof(T) * count, alignof(T));
+    }
+
+    constexpr void deallocate(T *ptr, std::size_t count) const noexcept {
+        m_resource->do_deallocate(ptr, sizeof(T) * count, alignof(T));
+    }
+};
+
+template <typename T, typename U>
+constexpr bool operator==(const concurrent_monotonic_buffer_allocator<T> &lhs,
+                          const concurrent_monotonic_buffer_allocator<U> &rhs) {
+    return lhs.m_resource == rhs.m_resource;
+}
+
+template <typename T, typename U>
+constexpr bool operator!=(const concurrent_monotonic_buffer_allocator<T> &lhs,
+                          const concurrent_monotonic_buffer_allocator<U> &rhs) {
+    return lhs.m_resource != rhs.m_resource;
+}
+
+using cmb_resource = concurrent_monotonic_buffer_resource;
+
+template <typename T>
+using cmb_allocator = concurrent_monotonic_buffer_allocator<T>;
 
 }  // namespace cmba
 
