@@ -11,6 +11,7 @@
 constexpr std::size_t k_elements_count = 1000000;
 
 int main() {
+    // std::bind is ok
     try {
         std::vector<std::byte> buffer(k_elements_count * 256);  // should be enough
         // also possible: cmba::cmb_resource
@@ -40,6 +41,7 @@ int main() {
         std::cout << "Something went wrong " << e.what() << "\n";
     }
 
+    // concurrent access is ok
     try {
         std::vector<std::byte> buffer(k_elements_count * 256);  // should be enough
         cmba::cmb_resource resource(buffer.data(), buffer.size());
@@ -71,6 +73,7 @@ int main() {
         std::cout << "Something went wrong " << e.what() << "\n";
     }
 
+    // vector<bool> is fine
     try {
         std::vector<std::byte> buffer(k_elements_count * 256);  // should be enough
         cmba::cmb_resource resource(buffer.data(), buffer.size());
