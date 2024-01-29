@@ -88,6 +88,14 @@ constexpr std::size_t k_cacheline_size =
 // NOLINTNEXTLINE(google-build-using-namespace)
 using namespace detail;
 
+struct monotonic_buffer_allocator_invalid_size_exception : public std::invalid_argument {
+public:
+    explicit monotonic_buffer_allocator_invalid_size_exception() noexcept
+        : std::invalid_argument(
+              "Concurrent monotonic buffer allocation failed, invalid allocation of size 0.") {
+    }
+};
+
 struct monotonic_buffer_bad_alloc_exception : public std::bad_alloc {
 private:
     std::size_t m_failed_alloc_size;
@@ -116,7 +124,7 @@ private:
     std::size_t m_size;
     alignas(k_cacheline_size) std::atomic<std::size_t> m_current_offset;
 
-    constexpr void *do_allocate(std::size_t bytes, std::size_t alignment) {
+    std::byte *do_allocate(std::size_t bytes, std::size_t alignment) {
         std::size_t current_offset_snapshot = m_current_offset.load(std::memory_order_relaxed);
         std::size_t needed_offset =
             ceil_size_as(ceil_size_as(current_offset_snapshot, alignment) + bytes, k_cacheline_size);
@@ -154,10 +162,10 @@ public:
     }
 
     concurrent_monotonic_buffer_resource(const concurrent_monotonic_buffer_resource &) = delete;
-    // already deleted implicitly because of atomic member
+    // already deleted implicitly because of atomic member (even though it might be possible to implement it)
     concurrent_monotonic_buffer_resource(concurrent_monotonic_buffer_resource &&) = delete;
     concurrent_monotonic_buffer_resource &operator=(const concurrent_monotonic_buffer_resource &) = delete;
-    // already deleted implicitly because of atomic member
+    // already deleted implicitly because of atomic member (even though it might be possible to implement it)
     concurrent_monotonic_buffer_resource &operator=(concurrent_monotonic_buffer_resource &&) = delete;
 
     ~concurrent_monotonic_buffer_resource() = default;
@@ -167,6 +175,9 @@ template <typename T>
 class concurrent_monotonic_buffer_allocator {
 private:
     concurrent_monotonic_buffer_resource *m_resource;
+
+    template <typename U>
+    friend class concurrent_monotonic_buffer_allocator;
 
 public:
     using value_type = T;
@@ -180,8 +191,13 @@ public:
         m_resource = other.m_resource;
     }
 
-    constexpr T *allocate(std::size_t count) {
-        return m_resource->do_allocate(sizeof(T) * count, alignof(T));
+    T *allocate(std::size_t count) {
+        if (count == 0) [[unlikely]] {
+            throw monotonic_buffer_allocator_invalid_size_exception();
+        }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return reinterpret_cast<T *>(m_resource->do_allocate(sizeof(T) * count, alignof(T)));
     }
 
     constexpr void deallocate(T *ptr, std::size_t count) const noexcept {
