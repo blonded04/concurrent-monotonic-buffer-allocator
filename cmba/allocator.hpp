@@ -87,12 +87,11 @@ private:
 
     std::byte* do_allocate(std::size_t size, std::size_t alignment, std::size_t count) {
         const std::size_t actual_size = std::lcm(size, alignment);
-        std::size_t current_offset_snapshot = 0;
+        std::size_t current_offset_snapshot = m_current_offset.load(std::memory_order_relaxed);
         std::size_t desired_offset = 0;
 
         bool first_iteration = true;
         do {
-            current_offset_snapshot = m_current_offset.load(std::memory_order_relaxed);
             desired_offset = align_as(
                 align_as(current_offset_snapshot, k_cacheline_size) + count * actual_size, actual_size);
 
