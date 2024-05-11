@@ -1,7 +1,9 @@
 # concurrent-monotonic-buffer-allocator
-Simple header-only C++20 concurrent monotonic buffer allocator that models the allocator requirements from the [[allocator.requirements]](https://eel.is/c++draft/allocator.requirements) ISO C++ section.
+Simple thread-safe header-only C++-20 monotonic buffer allocator for testing STL-compliant concurrent data-structures.
 
-Feel free to open an issue or a pull-request.
+Currently there are:
+* `cmb_allocator`: concurrent monotonic buffer allocator;
+* `cmb_multiallocator`: concurrent monotonic multibuffer allocator, may contain multiple buffers for better cache-coherence and less synchronization overhead.
 
 ## Usage
 
