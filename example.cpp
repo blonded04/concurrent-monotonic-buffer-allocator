@@ -1,3 +1,10 @@
+// Valery Matskevich, 2024
+//
+// Anyone is free to copy, modify, publish, use, compile, sell, or
+// distribute this software, either in source code form or as a compiled
+// binary, for any purpose, commercial or non-commercial, and by any
+// means.
+
 #include <algorithm>
 #include <functional>
 #include <iostream>
@@ -113,6 +120,8 @@ int main() {
         std::atomic<std::size_t> total_size;
         for (std::size_t i = 0; i < thread_count; i++) {
             multiresource.set_parent_buffer(i % 2);
+        }
+        for (std::size_t i = 0; i < thread_count; i++) {
             threads[i] = std::thread([allocator_int, &total_size]() {
                 std::vector<int, cmba::cmb_multiallocator<int, std::allocator<cmba::cmb_resource*>>>
                     container_vector(allocator_int);
