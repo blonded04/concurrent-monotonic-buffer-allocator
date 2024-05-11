@@ -98,7 +98,7 @@ private:
             desired_offset = algin_size_as(
                 algin_size_as(current_offset_snapshot, k_cacheline_size) + count * actual_size, actual_size);
 
-            if (desired_offset > m_size) {
+            if (desired_offset > m_size) [[unlikely]] {
                 throw std::bad_alloc();
             }
 
@@ -121,6 +121,9 @@ private:
         return this == &other;
     }
 
+    template <typename Alloc>
+    friend class concurrent_monotonic_multibuffer_resource;
+
     template <typename T>
     friend class concurrent_monotonic_buffer_allocator;
 
@@ -137,22 +140,15 @@ public:
     ~concurrent_monotonic_buffer_resource() = default;
 };
 
-template <typename Alloc = std::allocator<concurrent_monotonic_buffer_resource>>
+template <typename Alloc = std::allocator<concurrent_monotonic_buffer_resource*>>
 class alignas(k_cacheline_size) concurrent_monotonic_multibuffer_resource {
 private:
-    std::vector<concurrent_monotonic_buffer_resource, Alloc> m_resources;
+    std::vector<concurrent_monotonic_buffer_resource*, Alloc> m_resources;
     std::unordered_map<std::thread::id, std::size_t> m_parent_buffers;
-
-    void set_parent_buffer(std::size_t parent_buffer) {
-        if (parent_buffer >= m_resources.size()) {
-            throw std::invalid_argument("Not enough buffers in concurrent_monotonic_multibuffer_resource");
-        }
-        m_parent_buffers[std::this_thread::get_id()] = parent_buffer;
-    }
 
     std::byte* do_allocate(std::size_t size, std::size_t alignment, std::size_t count) {
         std::size_t parent_buffer = m_parent_buffers[std::this_thread::get_id()];
-        return m_resources[parent_buffer].do_allocate(size, alignment, count);
+        return m_resources[parent_buffer]->do_allocate(size, alignment, count);
     }
 
     constexpr void do_deallocate(void*, std::size_t, std::size_t, std::size_t) const noexcept {
@@ -167,11 +163,32 @@ private:
 
 public:
     explicit concurrent_monotonic_multibuffer_resource(
-        std::vector<concurrent_monotonic_buffer_resource, Alloc>&& resources)
-        : m_resources{std::move(resources)} {
-        if (m_resources.empty()) {
+        const std::vector<concurrent_monotonic_buffer_resource*, Alloc>& resources)
+        : m_resources{resources} {
+        if (m_resources.empty()) [[unlikely]] {
             throw std::invalid_argument(
                 "Can't create concurrent_monotonic_multibuffer_resource with no owned resources");
+        }
+        for (auto& resource : m_resources) {
+            if (resource == nullptr) {
+                throw std::invalid_argument(
+                    "concurrent_monotonic_multibuffer_resource can't contain nullptr resources");
+            }
+        }
+    }
+
+    explicit concurrent_monotonic_multibuffer_resource(
+        std::vector<concurrent_monotonic_buffer_resource*, Alloc>&& resources)
+        : m_resources{std::move(resources)} {
+        if (m_resources.empty()) [[unlikely]] {
+            throw std::invalid_argument(
+                "Can't create concurrent_monotonic_multibuffer_resource with no owned resources");
+        }
+        for (const auto& resource : m_resources) {
+            if (resource == nullptr) {
+                throw std::invalid_argument(
+                    "concurrent_monotonic_multibuffer_resource can't contain nullptr resources");
+            }
         }
     }
 
@@ -183,6 +200,13 @@ public:
         delete;
 
     ~concurrent_monotonic_multibuffer_resource() = default;
+
+    void set_parent_buffer(std::size_t parent_buffer) {
+        if (parent_buffer >= m_resources.size()) [[unlikely]] {
+            throw std::invalid_argument("Not enough buffers in concurrent_monotonic_multibuffer_resource");
+        }
+        m_parent_buffers[std::this_thread::get_id()] = parent_buffer;
+    }
 };
 
 template <typename T>
@@ -231,19 +255,19 @@ constexpr bool operator!=(const concurrent_monotonic_buffer_allocator<T>& lhs,
     return lhs.m_resource != rhs.m_resource;
 }
 
-template <typename T, typename Alloc = std::allocator<concurrent_monotonic_buffer_resource>>
+template <typename T, typename Alloc = std::allocator<concurrent_monotonic_buffer_resource*>>
 class concurrent_monotonic_multibuffer_allocator {
 private:
     concurrent_monotonic_multibuffer_resource<Alloc>* m_resource;
 
-    template <typename U>
+    template <typename U, typename UAlloc>
     friend class concurrent_monotonic_multibuffer_allocator;
 
 public:
     using value_type = T;
 
     explicit concurrent_monotonic_multibuffer_allocator(
-        concurrent_monotonic_multibuffer_allocator<Alloc>* resource) noexcept
+        concurrent_monotonic_multibuffer_resource<Alloc>* resource) noexcept
         : m_resource{resource} {
     }
 
@@ -280,12 +304,12 @@ constexpr bool operator!=(const concurrent_monotonic_multibuffer_allocator<T, Al
 }
 
 using cmb_resource = concurrent_monotonic_buffer_resource;
-template <typename Alloc = std::allocator<concurrent_monotonic_buffer_resource>>
+template <typename Alloc>
 using cmb_multiresource = concurrent_monotonic_multibuffer_resource<Alloc>;
 
 template <typename T>
 using cmb_allocator = concurrent_monotonic_buffer_allocator<T>;
-template <typename T, typename Alloc = std::allocator<T>>
+template <typename T, typename Alloc>
 using cmb_multiallocator = concurrent_monotonic_multibuffer_allocator<T, Alloc>;
 
 }  // namespace cmba
