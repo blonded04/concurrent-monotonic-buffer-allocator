@@ -5,8 +5,8 @@
 // binary, for any purpose, commercial or non-commercial, and by any
 // means.
 
-#ifndef CMBA_BLONDED04_
-#define CMBA_BLONDED04_
+#ifndef CMBA_BLONDED04_HPP_
+#define CMBA_BLONDED04_HPP_
 
 #include <atomic>
 #include <cstddef>
@@ -14,7 +14,10 @@
 #include <new>
 #include <numeric>
 #include <stdexcept>
+#include <thread>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace cmba {
 namespace detail {
@@ -67,7 +70,7 @@ constexpr const std::size_t k_cacheline_size =
     64;
 #endif
 
-constexpr std::size_t align_as(std::size_t size, std::size_t alignment) {
+constexpr std::size_t algin_size_as(std::size_t size, std::size_t alignment) {
     if (size % alignment == 0) {
         return size;
     }
@@ -92,8 +95,8 @@ private:
 
         bool first_iteration = true;
         do {
-            desired_offset = align_as(
-                align_as(current_offset_snapshot, k_cacheline_size) + count * actual_size, actual_size);
+            desired_offset = algin_size_as(
+                algin_size_as(current_offset_snapshot, k_cacheline_size) + count * actual_size, actual_size);
 
             if (desired_offset > m_size) {
                 throw std::bad_alloc();
@@ -108,7 +111,7 @@ private:
                                                          std::memory_order_acq_rel));
 
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        return m_buffer + align_as(current_offset_snapshot, alignment);
+        return m_buffer + algin_size_as(current_offset_snapshot, alignment);
     }
 
     constexpr void do_deallocate(void*, std::size_t, std::size_t, std::size_t) const noexcept {
@@ -138,17 +141,18 @@ template <typename Alloc = std::allocator<concurrent_monotonic_buffer_resource>>
 class alignas(k_cacheline_size) concurrent_monotonic_multibuffer_resource {
 private:
     std::vector<concurrent_monotonic_buffer_resource, Alloc> m_resources;
-    thread_local std::size_t m_parent_buffer;
+    std::unordered_map<std::thread::id, std::size_t> m_parent_buffers;
 
     void set_parent_buffer(std::size_t parent_buffer) {
         if (parent_buffer >= m_resources.size()) {
             throw std::invalid_argument("Not enough buffers in concurrent_monotonic_multibuffer_resource");
         }
-        m_parent_buffer = parent_buffer;
+        m_parent_buffers[std::this_thread::get_id()] = parent_buffer;
     }
 
     std::byte* do_allocate(std::size_t size, std::size_t alignment, std::size_t count) {
-        return m_resources[m_parent_buffer].do_allocate(size, alignment, count);
+        std::size_t parent_buffer = m_parent_buffers[std::this_thread::get_id()];
+        return m_resources[parent_buffer].do_allocate(size, alignment, count);
     }
 
     constexpr void do_deallocate(void*, std::size_t, std::size_t, std::size_t) const noexcept {
@@ -158,13 +162,13 @@ private:
         return this == &other;
     }
 
-    template <typename T>
-    friend class concurrent_monotonic_multibuffer_allocator<T, Alloc>;
+    template <typename U, typename UAlloc>
+    friend class concurrent_monotonic_multibuffer_allocator;
 
 public:
     explicit concurrent_monotonic_multibuffer_resource(
         std::vector<concurrent_monotonic_buffer_resource, Alloc>&& resources)
-        : m_resources{std::move(resources)}, m_parent_buffer{0} {
+        : m_resources{std::move(resources)} {
         if (m_resources.empty()) {
             throw std::invalid_argument(
                 "Can't create concurrent_monotonic_multibuffer_resource with no owned resources");
@@ -286,4 +290,4 @@ using cmb_multiallocator = concurrent_monotonic_multibuffer_allocator<T, Alloc>;
 
 }  // namespace cmba
 
-#endif  // CMBA_BLONDED04_
+#endif  // CMBA_BLONDED04_HPP_
