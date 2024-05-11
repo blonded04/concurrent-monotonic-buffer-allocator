@@ -22,7 +22,7 @@ namespace detail {
 inline void cpu_pause() {
 #if defined(__x86_64__) || defined(_M_X64) || defined(i386) || defined(__i386__) || defined(__i386) || \
     defined(_M_IX86)
-    asm volatile("pause");
+    asm volatile("pause" : : : "memory");
 #elif defined(__ARM_ARCH_2__) || defined(__ARM_ARCH_3__) || defined(__ARM_ARCH_3M__) || \
     defined(__ARM_ARCH_4T__) || defined(__TARGET_ARM_4T) || defined(__ARM_ARCH_5_) ||   \
     defined(__ARM_ARCH_5E_) || defined(__ARM_ARCH_6T2_) || defined(__ARM_ARCH_6T2_) ||  \
@@ -33,13 +33,13 @@ inline void cpu_pause() {
     defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__) || defined(__ARM_ARCH_7R__) || \
     defined(__ARM_ARCH_7M__) || defined(__ARM_ARCH_7S__) || defined(__ARM_ARCH_7M__) || \
     defined(__ARM_ARCH_7S__) || defined(__aarch64__) || defined(_M_ARM64)
-    asm volatile("yield");
+    asm volatile("isb sy" : : : "memory");
 #elif defined(__ppc__) || defined(_ARCH_PPC) || defined(_ARCH_PWR) || defined(_ARCH_PWR2) || defined(_POWER)
-    asm volatile("or 27,27,27");
+    asm volatile("or 27,27,27" : : : "memory");
 #elif defined(__sparc) || defined(__sparc__)
     asm volatile("membar #LoadLoad" : : : "memory");
 #elif defined(__ia64__)
-    asm volatile("hint @pause");
+    asm volatile("hint @pause" : : : "memory");
 #else
     asm volatile("" : : : "memory");
 #endif
@@ -134,6 +134,53 @@ public:
     ~concurrent_monotonic_buffer_resource() = default;
 };
 
+template <typename Alloc = std::allocator<concurrent_monotonic_buffer_resource>>
+class alignas(k_cacheline_size) concurrent_monotonic_multibuffer_resource {
+private:
+    std::vector<concurrent_monotonic_buffer_resource, Alloc> m_resources;
+    thread_local std::size_t m_parent_buffer;
+
+    void set_parent_buffer(std::size_t parent_buffer) {
+        if (parent_buffer >= m_resources.size()) {
+            throw std::invalid_argument("Not enough buffers in concurrent_monotonic_multibuffer_resource");
+        }
+        m_parent_buffer = parent_buffer;
+    }
+
+    std::byte* do_allocate(std::size_t size, std::size_t alignment, std::size_t count) {
+        return m_resources[m_parent_buffer].do_allocate(size, alignment, count);
+    }
+
+    constexpr void do_deallocate(void*, std::size_t, std::size_t, std::size_t) const noexcept {
+    }
+
+    bool do_is_equal(const concurrent_monotonic_multibuffer_resource& other) {
+        return this == &other;
+    }
+
+    template <typename T>
+    friend class concurrent_monotonic_multibuffer_allocator<T, Alloc>;
+
+public:
+    explicit concurrent_monotonic_multibuffer_resource(
+        std::vector<concurrent_monotonic_buffer_resource, Alloc>&& resources)
+        : m_resources{std::move(resources)}, m_parent_buffer{0} {
+        if (m_resources.empty()) {
+            throw std::invalid_argument(
+                "Can't create concurrent_monotonic_multibuffer_resource with no owned resources");
+        }
+    }
+
+    concurrent_monotonic_multibuffer_resource(const concurrent_monotonic_multibuffer_resource&) = delete;
+    concurrent_monotonic_multibuffer_resource(concurrent_monotonic_multibuffer_resource&&) = delete;
+    concurrent_monotonic_multibuffer_resource& operator=(const concurrent_monotonic_multibuffer_resource&) =
+        delete;
+    concurrent_monotonic_multibuffer_resource& operator=(concurrent_monotonic_multibuffer_resource&&) =
+        delete;
+
+    ~concurrent_monotonic_multibuffer_resource() = default;
+};
+
 template <typename T>
 class concurrent_monotonic_buffer_allocator {
 private:
@@ -180,10 +227,62 @@ constexpr bool operator!=(const concurrent_monotonic_buffer_allocator<T>& lhs,
     return lhs.m_resource != rhs.m_resource;
 }
 
+template <typename T, typename Alloc = std::allocator<concurrent_monotonic_buffer_resource>>
+class concurrent_monotonic_multibuffer_allocator {
+private:
+    concurrent_monotonic_multibuffer_resource<Alloc>* m_resource;
+
+    template <typename U>
+    friend class concurrent_monotonic_multibuffer_allocator;
+
+public:
+    using value_type = T;
+
+    explicit concurrent_monotonic_multibuffer_allocator(
+        concurrent_monotonic_multibuffer_allocator<Alloc>* resource) noexcept
+        : m_resource{resource} {
+    }
+
+    template <typename U>
+    concurrent_monotonic_multibuffer_allocator(
+        const concurrent_monotonic_multibuffer_allocator<U, Alloc>& other) noexcept {
+        m_resource = other.m_resource;
+    }
+
+    T* allocate(std::size_t count) {
+        if (count == 0) [[unlikely]] {
+            throw std::invalid_argument("Can't allocate 0 elements");
+        }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        return reinterpret_cast<T*>(m_resource->do_allocate(sizeof(T), alignof(T), count));
+    }
+
+    constexpr void deallocate(T* ptr, std::size_t count) const noexcept {
+        m_resource->do_deallocate(ptr, sizeof(T), alignof(T), count);
+    }
+};
+
+template <typename T, typename U, typename Alloc>
+constexpr bool operator==(const concurrent_monotonic_multibuffer_allocator<T, Alloc>& lhs,
+                          const concurrent_monotonic_multibuffer_allocator<U, Alloc>& rhs) {
+    return lhs.m_resource == rhs.m_resource;
+}
+
+template <typename T, typename U, typename Alloc>
+constexpr bool operator!=(const concurrent_monotonic_multibuffer_allocator<T, Alloc>& lhs,
+                          const concurrent_monotonic_multibuffer_allocator<T, Alloc>& rhs) {
+    return lhs.m_resource != rhs.m_resource;
+}
+
 using cmb_resource = concurrent_monotonic_buffer_resource;
+template <typename Alloc = std::allocator<concurrent_monotonic_buffer_resource>>
+using cmb_multiresource = concurrent_monotonic_multibuffer_resource<Alloc>;
 
 template <typename T>
 using cmb_allocator = concurrent_monotonic_buffer_allocator<T>;
+template <typename T, typename Alloc = std::allocator<T>>
+using cmb_multiallocator = concurrent_monotonic_multibuffer_allocator<T, Alloc>;
 
 }  // namespace cmba
 
